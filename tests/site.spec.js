@@ -124,7 +124,9 @@ test("mobile navigation, service selection, FAQs, theme persistence, and no hori
     .locator("summary")
     .click();
   await page.locator('[data-service="assembly"]').click();
+  await expect(page.getByRole("dialog", { name: "Request a quote" })).toBeVisible();
   await expect(page.locator("#service")).toHaveValue("assembly");
+  await page.getByRole("button", { name: "Close quote form" }).click();
   await page.getByRole("button", { name: "Switch to dark mode" }).click();
   await expect(page.locator("html")).toHaveAttribute("data-theme", "dark");
   await page.reload();
@@ -149,6 +151,7 @@ test("a project is saved with a reference and duplicate submissions are idempote
   await page.locator("#name").fill("Website QA");
   await page.locator("#email").fill("qa@example.com");
   await page.locator("#zip").fill("10001");
+  await page.getByRole("radio", { name: "Handyman" }).check();
   await page.locator("#service").selectOption("repairs");
   await page
     .locator("#message")
@@ -203,8 +206,7 @@ test("server rejects missing CSRF, invalid fields, honeypot, and non-POST reques
       "name",
       "email",
       "zip",
-      "service",
-      "message",
+      "work_type",
       "consent",
     ]),
   );
@@ -221,6 +223,7 @@ test("network failure retains form data and allows retry", async ({ page }) => {
   await page.locator("#name").fill("Website QA");
   await page.locator("#email").fill("qa@example.com");
   await page.locator("#zip").fill("10001");
+  await page.getByRole("radio", { name: "Handyman" }).check();
   await page.locator("#service").selectOption("assembly");
   await page
     .locator("#message")
@@ -241,6 +244,7 @@ test("without JavaScript form submits and returns server feedback", async ({
   const context = await browser.newContext({ javaScriptEnabled: false });
   const page = await context.newPage();
   await page.goto("http://localhost:8088/");
+  await page.getByRole("radio", { name: "Handyman" }).check();
   await page.locator("#name").fill("Website QA no JS");
   await page.locator("#email").fill("qa@example.com");
   await page.locator("#zip").fill("10001");
@@ -251,6 +255,143 @@ test("without JavaScript form submits and returns server feedback", async ({
   await page.locator('[name="consent"]').check();
   await page.locator(".form-submit").click();
   await expect(page).toHaveURL("http://localhost:8088/#quote");
+  await expect(page.locator("#form-success")).toBeVisible();
+  await context.close();
+});
+
+const quotePng = Buffer.from(
+  "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO+aC1kAAAAASUVORK5CYII=",
+  "base64",
+);
+const quoteFile = (name, buffer = quotePng) => ({ name, mimeType: "image/png", buffer });
+
+test("quote dialog and footer share cleaning selections, notes, and files", async ({ page }) => {
+  await page.setViewportSize({ width: 390, height: 844 });
+  await page.goto("/");
+  const opener = page.locator(".hero").getByRole("link", { name: "Request a quote" });
+  await opener.click();
+  const dialog = page.getByRole("dialog", { name: "Request a quote" });
+  await expect(dialog).toBeVisible();
+  await expect(dialog.getByRole("heading", { name: "Request a quote" })).toBeFocused();
+  await expect(dialog.getByLabel("Bedrooms")).toBeHidden();
+  await dialog.getByRole("radio", { name: "Cleaning" }).check();
+  await expect(dialog.getByLabel("Handyman service")).toBeHidden();
+  await dialog.getByLabel("Bedrooms").selectOption("0");
+  await dialog.getByLabel("Bathrooms").selectOption("1.5");
+  const extras = dialog.getByRole("group", { name: "Cleaning extras" });
+  await expect(extras.locator("label")).toHaveText([
+    "Laundry",
+    "Fridge cleaning",
+    "Oven cleaning",
+    "Interior window cleaning",
+    "Cleaning a home with pets",
+    "Baseboard cleaning",
+    "Interior cabinet cleaning",
+    "Basement cleaning",
+  ]);
+  await expect(extras.getByRole("checkbox")).toHaveCount(8);
+  await expect(extras.getByRole("checkbox", { checked: true })).toHaveCount(0);
+  await expect(dialog.getByLabel("Cleaning frequency")).toHaveCount(0);
+  await dialog.getByLabel("Fridge cleaning").check();
+  await dialog.getByLabel("Cleaning a home with pets").check();
+  await dialog.getByLabel("Basement cleaning").check();
+  await dialog.getByLabel("Anything else").fill("Please use fragrance-free products.");
+  await dialog.getByLabel("Photos or screenshots").setInputFiles([
+    quoteFile("kitchen.png"),
+    quoteFile("bathroom.png"),
+  ]);
+  await page.keyboard.press("Escape");
+  await expect(dialog).toBeHidden();
+  await expect(opener).toBeFocused();
+  const footer = page.locator("#quote-form-home");
+  await expect(footer.getByLabel("Bedrooms")).toHaveValue("0");
+  await expect(footer.getByLabel("Bathrooms")).toHaveValue("1.5");
+  await expect(footer.getByLabel("Fridge cleaning")).toBeChecked();
+  await expect(footer.getByLabel("Cleaning a home with pets")).toBeChecked();
+  await expect(footer.getByLabel("Basement cleaning")).toBeChecked();
+  await expect(footer.getByLabel("Anything else")).toHaveValue("Please use fragrance-free products.");
+  expect(await footer.getByLabel("Photos or screenshots").evaluate((input) => input.files.length)).toBe(2);
+
+  await footer.getByLabel("Your name").fill("Website QA cleaning");
+  await footer.getByLabel("Email address").fill("qa@example.com");
+  await footer.getByLabel("ZIP code").fill("10001");
+  await footer.locator('[name="consent"]').check();
+  await page.route("**/request.php", (route) => route.abort(), { times: 1 });
+  await footer.getByRole("button", { name: "Request a quote" }).click();
+  await expect(footer.locator("#form-error")).toContainText("Check your connection");
+  expect(await footer.getByLabel("Photos or screenshots").evaluate((input) => input.files.length)).toBe(2);
+  await footer.getByRole("button", { name: "Request a quote" }).click();
+  await expect(footer.locator("#form-success")).toBeVisible();
+});
+
+test("cleaning validates both counts, allowed extras, image contents, count, and combined size", async ({ page }) => {
+  await page.goto("/");
+  const csrf = await page.locator('[name="csrf"]').inputValue();
+  const fields = new FormData();
+  for (const [name, value] of Object.entries({
+    csrf, name: "Website QA validation", email: "qa@example.com", zip: "10001",
+    work_type: "cleaning", bedrooms: "2", bathrooms: "1", consent: "1",
+  })) fields.append(name, value);
+  const post = () => page.request.post("/request.php", {
+    headers: { Accept: "application/json" },
+    multipart: fields,
+  });
+  fields.set("bedrooms", "200");
+  fields.set("bathrooms", "1.75");
+  fields.set("addons[]", "unknown");
+  fields.append("attachments[]", new File(["Not an image"], "fake.png", { type: "image/png" }));
+  let response = await post();
+  expect(response.status()).toBe(422);
+  expect(Object.keys((await response.json()).errors)).toEqual(
+    expect.arrayContaining(["bedrooms", "bathrooms", "addons", "attachments"]),
+  );
+
+  fields.set("bedrooms", "2");
+  fields.set("bathrooms", "1");
+  fields.delete("addons[]");
+  fields.delete("attachments[]");
+  for (let i = 0; i < 6; i++) {
+    fields.append("attachments[]", new File([quotePng], `image-${i}.png`, { type: "image/png" }));
+  }
+  response = await post();
+  expect(response.status()).toBe(422);
+  expect((await response.json()).errors.attachments).toContain("up to 5");
+
+  fields.delete("attachments[]");
+  const biggerPng = Buffer.concat([quotePng, Buffer.alloc(5_000_000)]);
+  for (const name of ["first.png", "second.png"]) {
+    fields.append("attachments[]", new File([biggerPng], name, { type: "image/png" }));
+  }
+  response = await post();
+  expect(response.status()).toBe(422);
+  expect((await response.json()).errors.attachments).toContain("10 MB");
+});
+
+test("without JavaScript a cleaning request keeps its details after validation", async ({ browser }) => {
+  const context = await browser.newContext({ javaScriptEnabled: false });
+  const page = await context.newPage();
+  await page.goto("http://localhost:8088/#quote");
+  const form = page.locator("#quote-form");
+  await form.getByRole("radio", { name: "Cleaning" }).check();
+  await form.getByLabel("Bedrooms").selectOption("0");
+  await form.getByLabel("Baseboard cleaning").check();
+  await form.getByLabel("Your name").fill("Website QA cleaning no JS");
+  await form.getByLabel("Email address").fill("qa@example.com");
+  await form.getByLabel("ZIP code").fill("10001");
+  await form.getByLabel("Photos or screenshots").setInputFiles(quoteFile("kitchen.png"));
+  await form.locator('[name="consent"]').check();
+  const submit = form.getByRole("button", { name: "Request a quote" });
+  await submit.click();
+  await expect(form.locator("#bathrooms-error")).toHaveText("Choose the number of bathrooms.");
+  await expect(form.locator("#attachments-help")).toContainText("Please select your images again.");
+  await expect(form.getByRole("radio", { name: "Cleaning" })).toBeChecked();
+  await expect(form.getByLabel("Bedrooms")).toHaveValue("0");
+  await expect(form.getByLabel("Baseboard cleaning")).toBeChecked();
+  await expect(form.getByLabel("Your name")).toHaveValue("Website QA cleaning no JS");
+
+  await form.getByLabel("Bathrooms").selectOption("0.5");
+  await form.getByLabel("Photos or screenshots").setInputFiles(quoteFile("kitchen.png"));
+  await submit.click();
   await expect(page.locator("#form-success")).toBeVisible();
   await context.close();
 });

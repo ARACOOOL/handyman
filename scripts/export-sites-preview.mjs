@@ -9,8 +9,9 @@ if (!response.ok) throw new Error(`Local PHP site returned ${response.status}`);
 let html = await response.text();
 html = html
   .replace(/\s*<input type="hidden" name="csrf"[^>]+>/, "")
-  .replace('method="post" action="/request.php"', 'aria-describedby="preview-notice"')
-  .replace('<p class="form-intro">Your project starts here.</p>', '<p class="form-intro">Your project starts here.</p><p id="preview-notice" class="preview-notice">Design preview only. This form does not send or save requests.</p><fieldset class="preview-fields" disabled>')
+  .replace(/\s*<div class="honeypot"[^>]*>.*?<\/div>/, "")
+  .replace('method="post" action="/request.php" enctype="multipart/form-data"', 'aria-describedby="preview-notice"')
+  .replace('<div class="form-grid">', '<p id="preview-notice" class="preview-notice">Design preview only. This form does not send or save requests.</p><fieldset class="preview-fields" disabled><div class="form-grid">')
   .replace('<button class="button button-dark form-submit" type="submit"><span>Request a quote</span>', '<button class="button button-dark form-submit" type="button" disabled><span>Preview only</span>')
   .replace('No commitment. Just a conversation about your home.', 'Request submissions are disabled in this design preview.')
   .replace(/(<p class="form-footnote">[^<]+<\/p>)/, '$1</fieldset>')

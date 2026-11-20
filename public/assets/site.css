@@ -847,6 +847,7 @@ details[open] .detail-toggle .ph {
   display: grid;
   grid-template-columns: 1fr 1.05fr;
   gap: 90px;
+  align-items: start;
 }
 .quote-copy > p:not(.eyebrow) {
   font-size: 13px;
@@ -881,11 +882,136 @@ details[open] .detail-toggle .ph {
   padding: 32px;
   min-width: 0;
 }
-.form-intro {
-  font-weight: 600;
-  font-size: 19px;
-  letter-spacing: -0.6px;
-  margin-bottom: 25px;
+#quote-dialog {
+  width: min(620px, calc(100% - 28px));
+  max-height: calc(100dvh - 32px);
+  padding: 0;
+  overflow: hidden;
+  background: var(--card);
+  color: var(--text);
+  border: 1px solid var(--line);
+  border-radius: 16px;
+}
+#quote-dialog[open] {
+  display: flex;
+  flex-direction: column;
+}
+#quote-dialog::backdrop {
+  background: rgb(16 24 18 / 65%);
+}
+body:has(#quote-dialog[open]) {
+  overflow: hidden;
+}
+.quote-dialog-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 16px clamp(16px, 5vw, 32px);
+  border-bottom: 1px solid var(--line);
+}
+.quote-dialog-header h2 {
+  font-size: clamp(22px, 5vw, 30px);
+  letter-spacing: -0.8px;
+}
+.quote-dialog-header .icon-button {
+  flex-shrink: 0;
+  width: 44px;
+  height: 44px;
+}
+.quote-dialog-body {
+  overflow: auto;
+  overscroll-behavior: contain;
+  padding: 24px clamp(16px, 5vw, 32px);
+}
+.quote-fields {
+  min-width: 0;
+  margin: 0;
+  padding: 0;
+  border: 0;
+}
+.quote-fields legend {
+  margin-bottom: 9px;
+  padding: 0;
+  font-size: 14px;
+  font-weight: 750;
+}
+.work-choices {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 8px;
+}
+.work-choice {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-height: 52px;
+  padding: 7px 9px;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: var(--surface);
+  font-size: 13px;
+  font-weight: 650;
+  cursor: pointer;
+}
+.work-choice .ph {
+  font-size: 18px;
+  color: var(--focus);
+}
+.work-choice:has(input:checked) {
+  border-color: var(--focus);
+  background: var(--panel);
+}
+.work-choice input,
+.addon-choice input {
+  flex: none;
+  margin: 0;
+  accent-color: var(--focus);
+}
+.addon-choices {
+  border-top: 1px solid var(--line);
+}
+.addon-choice {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  min-height: 44px;
+  padding: 6px 8px;
+  border-bottom: 1px solid var(--line);
+  font-size: 13px;
+  cursor: pointer;
+}
+.addon-choice:has(input:checked) {
+  background: var(--panel);
+}
+.quote-optional,
+.quote-help {
+  color: var(--muted);
+  font-size: 13px;
+  font-weight: 500;
+}
+.quote-contact-title {
+  margin-top: 6px;
+  padding-top: 15px;
+  border-top: 1px solid var(--line);
+  font-size: 17px;
+}
+.field input[type="file"] {
+  padding: 8px;
+}
+.field input::file-selector-button {
+  margin-inline-end: 10px;
+  padding: 6px 9px;
+  border: 1px solid var(--line);
+  border-radius: 5px;
+  background: var(--panel);
+  color: var(--text);
+  cursor: pointer;
+}
+@media (max-width: 390px) {
+  .work-choice .ph {
+    display: none;
+  }
 }
 .form-grid {
   display: grid;
@@ -1512,9 +1638,6 @@ a.social-icon:active {
   .field textarea,
   .field select {
     font-size: 12px;
-  }
-  .form-intro {
-    font-size: 19px;
   }
   .consent {
     font-size: 10px;

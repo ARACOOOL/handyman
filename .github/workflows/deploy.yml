@@ -21,6 +21,8 @@ jobs:
           docker compose run --rm --no-deps web php -l /var/www/html/index.php
           docker compose run --rm --no-deps web php -l /var/www/html/request.php
           docker compose run --rm --no-deps web php -l /var/www/app/bootstrap.php
+          docker compose run --rm --no-deps web php -l /var/www/app/quote.php
+          docker compose run --rm --no-deps web php -l /var/www/app/notify-quotes.php
       - name: Deploy to server
         env:
           DEPLOY_KEY: ${{ secrets.DEPLOY_SSH_KEY }}

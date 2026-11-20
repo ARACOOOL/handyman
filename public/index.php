@@ -1,5 +1,6 @@
 <?php
 require dirname(__DIR__) . '/app/bootstrap.php';
+require dirname(__DIR__) . '/app/quote.php';
 $email = getenv('BUSINESS_EMAIL') ?: '';
 $phone = getenv('BUSINESS_PHONE') ?: '';
 $area = getenv('SERVICE_AREA') ?: '';
@@ -12,6 +13,10 @@ $flash = $_SESSION['flash'] ?? null;
 unset($_SESSION['flash']);
 $old = $flash['old'] ?? [];
 $errors = $flash['errors'] ?? [];
+$linkedService = $_GET['service'] ?? '';
+if (!is_string($linkedService) || !isset($services[$linkedService])) $linkedService = '';
+$selectedWork = $old['work_type'] ?? ($linkedService !== '' ? 'handyman' : '');
+$selectedService = $old['service'] ?? $linkedService;
 ?>
 <!DOCTYPE html>
 <html lang="en">
@@ -95,7 +100,7 @@ $errors = $flash['errors'] ?? [];
                 <?php foreach ($services as $key => [$title, $description, $glyph, $items]): ?>
                 <details class="service-item reveal" <?= $key === 'repairs' ? 'open' : '' ?>>
                     <summary><span class="service-icon"><?= icon($glyph) ?></span><span><?= escape($title) ?></span><span class="detail-toggle"><?= icon('plus') ?></span></summary>
-                    <div class="service-content"><p><?= escape($description) ?></p><ul><?php foreach ($items as $item): ?><li><?= escape($item) ?></li><?php endforeach; ?></ul><a href="#quote" class="service-select text-link" data-service="<?= escape($key) ?>">Request a quote <?= icon('arrow-up-right') ?></a></div>
+                    <div class="service-content"><p><?= escape($description) ?></p><ul><?php foreach ($items as $item): ?><li><?= escape($item) ?></li><?php endforeach; ?></ul><a href="/?service=<?= escape($key) ?>#quote" class="service-select text-link" data-service="<?= escape($key) ?>">Request a quote <?= icon('arrow-up-right') ?></a></div>
                 </details>
                 <?php endforeach; ?>
             </div>
@@ -173,28 +178,83 @@ $errors = $flash['errors'] ?? [];
             <div class="quote-copy reveal"><p class="eyebrow">Let’s get it off your list</p><h2 id="quote-title">What can we<br>take care of?</h2><p>Tell us a little about your project. We’ll work out the next steps together.</p><div class="quote-note"><?= icon('notepad') ?><p>Not sure exactly what you need?<br>Start with what you’d like to change.</p></div>
                 <?php if ($email !== '' || $phone !== ''): ?><div class="contact-details"><?php if ($email !== ''): ?><a href="mailto:<?= escape($email) ?>"><?= escape($email) ?></a><?php endif; ?><?php if ($phone !== ''): ?><a href="tel:<?= escape(preg_replace('/[^+0-9]/', '', $phone)) ?>"><?= escape($phone) ?></a><?php endif; ?></div><?php endif; ?>
             </div>
-            <div class="quote-form-wrap reveal">
+            <div class="quote-form-wrap" id="quote-form-home">
+              <div id="quote-content">
                 <div id="form-success" class="form-success" role="status" <?= isset($flash['success']) ? '' : 'hidden' ?>><?= icon('check-circle') ?><h3>One less thing to think about.</h3><p>Your project request has been saved. Thank you for telling us what your home needs.</p><p class="reference"><?= isset($flash['reference']) ? 'Reference: ' . escape($flash['reference']) : '' ?></p><a class="text-link" id="another-request" href="/#quote">Send another request <?= icon('arrow-up-right') ?></a></div>
-                <form id="quote-form" method="post" action="/request.php" <?= isset($flash['success']) ? 'hidden' : '' ?>>
+                <form id="quote-form" method="post" action="/request.php" enctype="multipart/form-data" <?= isset($flash['success']) ? 'hidden' : '' ?>>
                     <input type="hidden" name="csrf" value="<?= escape($_SESSION['csrf']) ?>">
                     <div class="honeypot" aria-hidden="true"><label for="website">Leave this blank</label><input id="website" name="website" tabindex="-1" autocomplete="off"></div>
-                    <p class="form-intro">Your project starts here.</p>
-                    <div id="form-error" class="form-error" role="alert" <?= isset($errors['_form']) ? '' : 'hidden' ?>><?= escape($errors['_form'] ?? '') ?></div>
+                    <div id="form-error" class="form-error" role="alert" tabindex="-1" <?= isset($errors['_form']) ? '' : 'hidden' ?>><?= escape($errors['_form'] ?? '') ?></div>
                     <div class="form-grid">
-                    <?php foreach ([['name', 'Your name', 'text', 'name', 'Your full name'], ['email', 'Email address', 'email', 'email', 'you@example.com'], ['phone', 'Phone number (optional)', 'tel', 'tel', '(555) 000-0000'], ['zip', 'ZIP code', 'text', 'postal-code', 'Your ZIP code']] as [$field, $label, $type, $autocomplete, $placeholder]): ?>
-                        <div class="field"><label for="<?= $field ?>"><?= $label ?></label><input id="<?= $field ?>" name="<?= $field ?>" type="<?= $type ?>" autocomplete="<?= $autocomplete ?>" placeholder="<?= $placeholder ?>" value="<?= escape($old[$field] ?? '') ?>" maxlength="<?= $field === 'email' ? '254' : '100' ?>" <?= $field !== 'phone' ? 'required' : '' ?> <?= $field === 'zip' ? 'inputmode="numeric" pattern="[0-9]{5}(-[0-9]{4})?"' : '' ?> aria-describedby="<?= $field ?>-error" <?= isset($errors[$field]) ? 'aria-invalid="true"' : '' ?>><span class="field-error" id="<?= $field ?>-error"><?= escape($errors[$field] ?? '') ?></span></div>
+                        <fieldset class="quote-fields field-wide" aria-describedby="work_type-error">
+                            <legend>What kind of work do you need?</legend>
+                            <div class="work-choices">
+                                <?php foreach (['cleaning' => ['Cleaning', 'sparkle'], 'handyman' => ['Handyman', 'wrench']] as $key => [$label, $glyph]): ?>
+                                <label class="work-choice"><input type="radio" name="work_type" value="<?= $key ?>" required <?= $selectedWork === $key ? 'checked' : '' ?> <?= isset($errors['work_type']) ? 'aria-invalid="true"' : '' ?>><?= icon($glyph) ?><span><?= $label ?></span></label>
+                                <?php endforeach; ?>
+                            </div>
+                            <span class="field-error" id="work_type-error"><?= escape($errors['work_type'] ?? '') ?></span>
+                        </fieldset>
+                        <noscript><p class="field-wide quote-help">Fill in the details for the type of work you selected.</p></noscript>
+                        <fieldset class="quote-fields field-wide" data-work-fields="cleaning">
+                            <legend>Cleaning details</legend>
+                            <div class="form-grid">
+                            <?php foreach (['bedrooms' => BEDROOM_COUNTS, 'bathrooms' => BATHROOM_COUNTS] as $field => $counts): ?>
+                            <div class="field">
+                                <label for="<?= $field ?>"><?= ucfirst($field) ?></label>
+                                <select id="<?= $field ?>" name="<?= $field ?>" data-required aria-describedby="<?= $field ?>-error" <?= isset($errors[$field]) ? 'aria-invalid="true"' : '' ?>>
+                                    <option value="">Select</option>
+                                    <?php foreach ($counts as $count => $label): ?>
+                                    <option value="<?= $count ?>" <?= ($old[$field] ?? '') === (string) $count ? 'selected' : '' ?>><?= escape($field === 'bedrooms' && $count === 0 ? '0 (studio)' : $label) ?></option>
+                                    <?php endforeach; ?>
+                                </select>
+                                <span class="field-error" id="<?= $field ?>-error"><?= escape($errors[$field] ?? '') ?></span>
+                            </div>
+                            <?php endforeach; ?>
+                            <fieldset class="quote-fields field-wide" aria-describedby="addons-error">
+                                <legend>Cleaning extras <span class="quote-optional">(optional)</span></legend>
+                                <div class="addon-choices">
+                                    <?php foreach (CLEANING_ADDONS as $key => $label): ?>
+                                    <label class="addon-choice">
+                                        <input type="checkbox" name="addons[]" value="<?= $key ?>" <?= in_array($key, $old['addons'] ?? [], true) ? 'checked' : '' ?> <?= isset($errors['addons']) ? 'aria-invalid="true"' : '' ?>>
+                                        <span><?= escape($label) ?></span>
+                                    </label>
+                                    <?php endforeach; ?>
+                                </div>
+                                <span class="field-error" id="addons-error"><?= escape($errors['addons'] ?? '') ?></span>
+                            </fieldset>
+                            </div>
+                        </fieldset>
+                        <div class="field field-wide" data-work-fields="handyman"><label for="service">Handyman service</label><select id="service" name="service" data-required aria-describedby="service-error" <?= isset($errors['service']) ? 'aria-invalid="true"' : '' ?>><option value="">Choose a service</option><?php foreach ($services as $key => $service): ?><option value="<?= $key ?>" <?= $selectedService === $key ? 'selected' : '' ?>><?= escape($service[0]) ?></option><?php endforeach; ?><option value="other" <?= $selectedService === 'other' ? 'selected' : '' ?>>A few things / something else</option></select><span class="field-error" id="service-error"><?= escape($errors['service'] ?? '') ?></span></div>
+                        <div class="field field-wide"><label for="message">Anything else we should know? <span id="message-optional" class="quote-optional">(optional for cleaning)</span></label><textarea id="message" name="message" rows="3" maxlength="3000" aria-describedby="message-error" <?= isset($errors['message']) ? 'aria-invalid="true"' : '' ?>><?= escape($old['message'] ?? '') ?></textarea><span class="field-error" id="message-error"><?= escape($errors['message'] ?? '') ?></span></div>
+                        <div class="field field-wide">
+                            <label for="attachments">Photos or screenshots <span class="quote-optional">(optional)</span></label>
+                            <input id="attachments" name="attachments[]" type="file" accept="<?= escape(implode(',', array_keys(QUOTE_IMAGE_TYPES))) ?>" multiple data-max-files="<?= QUOTE_UPLOAD_COUNT ?>" data-max-bytes="<?= QUOTE_UPLOAD_LIMIT ?>" aria-describedby="attachments-help attachments-error" <?= isset($errors['attachments']) ? 'aria-invalid="true"' : '' ?>>
+                            <p class="quote-help" id="attachments-help">Up to <?= QUOTE_UPLOAD_COUNT ?> JPG, PNG, or WebP images, 10 MB total.<?php if (!empty($flash['reattach'])): ?> Please select your images again.<?php endif; ?></p>
+                            <span class="field-error" id="attachments-error"><?= escape($errors['attachments'] ?? '') ?></span>
+                        </div>
+                        <h3 class="quote-contact-title field-wide">Contact details</h3>
+                    <?php foreach ([['name', 'Your name', 'text', 'name', 'Your full name'], ['email', 'Email address', 'email', 'email', 'you@example.com'], ['phone', 'Phone number', 'tel', 'tel', '(555) 000-0000'], ['zip', 'ZIP code', 'text', 'postal-code', 'Your ZIP code']] as [$field, $label, $type, $autocomplete, $placeholder]): ?>
+                        <div class="field">
+                            <label for="<?= $field ?>"><?= $label ?><?php if ($field === 'phone'): ?> <span class="quote-optional">(optional)</span><?php endif; ?></label>
+                            <input id="<?= $field ?>" name="<?= $field ?>" type="<?= $type ?>" autocomplete="<?= $autocomplete ?>" placeholder="<?= $placeholder ?>" value="<?= escape($old[$field] ?? '') ?>" maxlength="<?= $field === 'email' ? '254' : '100' ?>" <?= $field !== 'phone' ? 'required' : '' ?> <?= $field === 'zip' ? 'inputmode="numeric" pattern="[0-9]{5}(-[0-9]{4})?"' : '' ?> aria-describedby="<?= $field ?>-error" <?= isset($errors[$field]) ? 'aria-invalid="true"' : '' ?>>
+                            <span class="field-error" id="<?= $field ?>-error"><?= escape($errors[$field] ?? '') ?></span>
+                        </div>
                     <?php endforeach; ?>
-                    <div class="field field-wide"><label for="service">What can we help with?</label><select id="service" name="service" required aria-describedby="service-error"><option value="">Choose a service</option><?php foreach ($services as $key => $service): ?><option value="<?= $key ?>" <?= ($old['service'] ?? '') === $key ? 'selected' : '' ?>><?= escape($service[0]) ?></option><?php endforeach; ?><option value="other" <?= ($old['service'] ?? '') === 'other' ? 'selected' : '' ?>>A few things / something else</option></select><span class="field-error" id="service-error"><?= escape($errors['service'] ?? '') ?></span></div>
-                    <div class="field field-wide"><label for="message">Tell us about your project</label><textarea id="message" name="message" rows="3" minlength="10" maxlength="3000" required placeholder="What needs fixing, building, or a little attention?" aria-describedby="message-error"><?= escape($old['message'] ?? '') ?></textarea><span class="field-error" id="message-error"><?= escape($errors['message'] ?? '') ?></span></div>
                     </div>
                     <label class="consent"><input type="checkbox" name="consent" value="1" required <?= ($old['consent'] ?? '') === '1' ? 'checked' : '' ?> aria-describedby="consent-error"><span>You may contact me about this request. My details will only be used to respond to my project.</span></label><span class="field-error" id="consent-error"><?= escape($errors['consent'] ?? '') ?></span>
                     <button class="button button-dark form-submit" type="submit"><span>Request a quote</span><?= icon('arrow-up-right') ?></button>
                     <p class="form-footnote">No commitment. Just a conversation about your home.</p>
                 </form>
+              </div>
             </div>
         </div>
     </section>
 </main>
+<dialog id="quote-dialog" aria-labelledby="quote-dialog-title">
+    <div class="quote-dialog-header"><h2 id="quote-dialog-title" tabindex="-1">Request a quote</h2><button class="icon-button" id="quote-dialog-close" type="button" aria-label="Close quote form"><?= icon('x') ?></button></div>
+    <div id="quote-dialog-body" class="quote-dialog-body"></div>
+</dialog>
 <footer class="site-footer container">
     <a class="brand" href="/" aria-label="Lion Home Services home"><span class="brand-mark"><?= icon('house-line') ?></span><span class="brand-name">LION <span>HOME SERVICES</span></span></a>
     <p>A little help goes a long way.</p>

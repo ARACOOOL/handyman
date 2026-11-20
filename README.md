@@ -30,11 +30,12 @@ Set `FACEBOOK_URL` and `INSTAGRAM_URL` to the business's full HTTPS profile URLs
 
 The testimonial carousel in `public/index.php` summarizes five reviews Thumbtack marks as “Hired on Thumbtack.” It links to the original reviews and displays the public reviewer names and individual star ratings. The carousel supports arrow buttons, keyboard navigation, and native touch scrolling. It respects reduced motion and remains scrollable without JavaScript.
 
-- `app/bootstrap.php`: the six suggested services and their example jobs.
+- `app/quote.php`: handyman services, room counts, cleaning options, and upload validation.
 - `public/index.php`: page content, FAQs, and form.
 - `public/assets/site.css`: layout, green accent, light/dark tokens, and responsive rules.
 - `public/assets/site.js`: theme switch, mobile menu, service selection, scroll reveals, and form feedback.
-- `public/request.php`: validation and request storage.
+- `public/request.php`: quote validation and private storage.
+- `app/notify-quotes.php`: sends saved quote notifications with attachments when email is configured.
 
 The running Compose setup mounts `public/` and `app/`, so edits appear when you refresh. After changing Docker or Apache configuration, rebuild with `docker compose up -d --build`.
 
@@ -43,7 +44,8 @@ The running Compose setup mounts `public/` and `app/`, so edits appear when you 
 - Responsive desktop/mobile layouts and accessible navigation.
 - Light and dark themes, following the system preference until manually changed.
 - Expandable service details and FAQs.
-- Service links that preselect the quote form.
+- One quote form at the bottom of the page, also opened in a dialog by the quote buttons. Handyman service links preselect the matching service.
+- Cleaning requests collect bedroom and bathroom counts, optional cleaning choices, and notes. Both cleaning and handyman requests accept up to five JPG, PNG, or WebP images with a combined limit of 10 MB.
 - Server-side validation, session CSRF protection, consent checkbox, honeypot, per-session throttling, and duplicate detection.
 - Persistent quote requests with a reference number, clear success/error states, and protection against losing form details after a network failure.
 - Form submission and service disclosures also work without JavaScript.
@@ -51,13 +53,27 @@ The running Compose setup mounts `public/` and `app/`, so edits appear when you 
 
 ## Read submitted requests
 
-Requests are stored privately outside the web root at `/var/lib/lion/requests/requests.jsonl` inside the named Docker volume. Each line is one JSON record. View them locally:
+Requests are stored privately outside the web root at `/var/lib/lion/requests/requests.jsonl` inside the named Docker volume. Each line is one JSON record. Uploaded images are in a directory named after the request reference in the same volume. Back up the entire volume to include both requests and images. View requests locally:
 
 ```sh
 docker compose exec web cat /var/lib/lion/requests/requests.jsonl
 ```
 
-There is no public inbox or admin route. **Requests are saved locally; email notifications are not configured.** Connect a mail provider or CRM before relying on this site to notify the business. Contact details and the service area also need to be supplied before public launch.
+There is no public inbox or admin route. With no quote email configured, requests are saved locally and the form confirms that they were saved.
+
+## Enable quote emails
+
+The app can send new requests through the [Resend Email API](https://resend.com/docs/api-reference/emails/send-email). Verify your sending domain in Resend, then add the following settings to the private `.env` file.
+
+| Setting | Value |
+| --- | --- |
+| `QUOTE_EMAIL_TO` | The single inbox where quote requests should arrive |
+| `QUOTE_EMAIL_FROM` | A sender address on your verified sending domain |
+| `RESEND_API_KEY` | A Resend API key with permission to send email |
+
+Run `docker compose up -d` to apply the settings. Submit a test quote with images and check the inbox, attachments, and reply address. The recipient is private and independent of the website’s public `BUSINESS_EMAIL`.
+
+The notifications service checks for saved requests about once a minute. Customers receive a reference as soon as the site saves the request and images. The business notification goes out separately and uses the customer’s address for replies. If the provider is unavailable, delivery is retried. Check `docker compose logs notifications` for acceptance or pending status. Provider acceptance can be checked against actual delivery in the Resend dashboard. Requests received before a recipient was configured are available in storage for manual follow-up.
 
 The initial services are suggestions, not verified business capabilities. The hero uses a single AI-edited outdoor portrait based on the user's photographs, with an illustrative house setting. Supporting photography is also illustrative, not a portfolio of completed Lion jobs. The owner supplied the figures for happy customers, average small repair time, and owner operation. The Thumbtack rating is a snapshot of the profile on November 19, 2026 (4.9 out of 5 from 13 reviews). Update these figures in `public/index.php` as the business grows.
 
@@ -82,7 +98,9 @@ The Docker image includes the application and public assets. The provided Compos
 
 The `lionhs.co` server runs the application from `/opt/lion-home-services` with Docker Compose, behind Nginx and a Let's Encrypt certificate. Nginx handles HTTPS, redirects HTTP, and limits quote submissions. Apache recognizes the HTTPS header set by the server's proxy so PHP marks session cookies secure. Certbot's timer renews the certificate and a deployment hook reloads Nginx. Nginx trusts Cloudflare's published proxy IP ranges for the visitor address; those ranges must be kept current if Cloudflare changes them.
 
-Quote requests are stored in the server's `lion-home-services_requests` Docker volume. They do not generate email notifications, and a backup for the volume has not been configured. From the server, inspect requests with `cd /opt/lion-home-services && docker compose exec web cat /var/lib/lion/requests/requests.jsonl`. This file contains private customer information. The deployment check created an identifiable `Website QA` test request.
+Before releasing image uploads, set or verify `client_max_body_size 12m;` for the Nginx location serving `/request.php`. Keep the existing submission rate limit. Validate and reload Nginx, then test an image upload through the public URL.
+
+Quote requests are stored in the server's `lion-home-services_requests` Docker volume. A backup for the volume has not been configured. From the server, inspect requests with `cd /opt/lion-home-services && docker compose exec web cat /var/lib/lion/requests/requests.jsonl`. This file and the upload directories contain private customer information. The deployment check created an identifiable `Website QA` test request.
 
 ## ChatGPT Sites design preview
 

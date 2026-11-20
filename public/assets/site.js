@@ -146,16 +146,88 @@
   const form = document.querySelector("#quote-form");
   const success = document.querySelector("#form-success");
   const formError = document.querySelector("#form-error");
-  const submit = form.querySelector('[type="submit"]');
-  document.querySelectorAll(".service-select").forEach((link) =>
-    link.addEventListener("click", () => {
-      if (form.hidden) {
-        success.hidden = true;
-        form.hidden = false;
-      }
-      form.elements.service.value = link.dataset.service;
-    }),
-  );
+  const submit = form.querySelector(".form-submit");
+  const attachments = form.querySelector("#attachments");
+  const workType = form.elements.work_type;
+  const syncWorkFields = () => {
+    form.querySelectorAll("[data-work-fields]").forEach((section) => {
+      const active = section.dataset.workFields === workType.value;
+      section.hidden = !active;
+      section.querySelectorAll("input, select").forEach((field) => {
+        field.disabled = !active;
+        field.required = active && field.hasAttribute("data-required");
+      });
+    });
+    const handyman = workType.value === "handyman";
+    form.elements.message.required = handyman;
+    form.elements.message.minLength = handyman ? 10 : 0;
+    form.querySelector("#message-optional").hidden = handyman;
+    form.querySelector("#message-optional").textContent = workType.value ? "(optional)" : "(optional for cleaning)";
+  };
+  syncWorkFields();
+  [...workType].forEach((input) => input.addEventListener("change", syncWorkFields));
+
+  const dialog = document.querySelector("#quote-dialog");
+  const dialogBody = document.querySelector("#quote-dialog-body");
+  const content = document.querySelector("#quote-content");
+  const formHome = document.querySelector("#quote-form-home");
+  if (typeof dialog.showModal === "function") {
+    let opener;
+    document.querySelectorAll('a[href="#quote"], a.service-select').forEach((link) => {
+      link.setAttribute("aria-haspopup", "dialog");
+      link.addEventListener("click", (event) => {
+        if (event.metaKey || event.ctrlKey || event.shiftKey || event.altKey) return;
+        event.preventDefault();
+        opener = link;
+        if (link.dataset.service) {
+          if (form.hidden) {
+            success.hidden = true;
+            form.hidden = false;
+          }
+          workType.value = "handyman";
+          form.elements.service.value = link.dataset.service;
+          syncWorkFields();
+        }
+        dialogBody.append(content);
+        dialog.showModal();
+        dialogBody.scrollTop = 0;
+        document.querySelector("#quote-dialog-title").focus();
+      });
+    });
+    document.querySelector("#quote-dialog-close").addEventListener("click", () => dialog.close());
+    dialog.addEventListener("close", () => {
+      formHome.append(content);
+      opener?.focus({ preventScroll: true });
+    });
+  }
+  const setError = (field, message) => {
+    const error = document.getElementById(`${field}-error`);
+    if (error) {
+      error.textContent = message;
+      [...form.elements].filter((input) => input.name === field || input.name === `${field}[]`).forEach((input) => {
+        input.setAttribute("aria-invalid", "true");
+      });
+    } else {
+      formError.textContent = message;
+      formError.hidden = false;
+    }
+  };
+  const uploadError = () => {
+    const files = [...attachments.files];
+    if (files.length > Number(attachments.dataset.maxFiles)) {
+      return `Choose up to ${attachments.dataset.maxFiles} images.`;
+    }
+    if (files.reduce((total, file) => total + file.size, 0) > Number(attachments.dataset.maxBytes)) {
+      return "Keep all images together under 10 MB.";
+    }
+    return "";
+  };
+  attachments.addEventListener("change", () => {
+    const message = uploadError();
+    form.querySelector("#attachments-error").textContent = "";
+    attachments.removeAttribute("aria-invalid");
+    if (message) setError("attachments", message);
+  });
   const clearErrors = () => {
     formError.hidden = true;
     form
@@ -169,6 +241,12 @@
     event.preventDefault();
     if (submit.disabled) return;
     clearErrors();
+    const invalidUpload = uploadError();
+    if (invalidUpload) {
+      setError("attachments", invalidUpload);
+      attachments.focus();
+      return;
+    }
     submit.disabled = true;
     submit.querySelector("span").textContent = "Saving your request…";
     form.setAttribute("aria-busy", "true");
@@ -178,25 +256,21 @@
         body: new FormData(form),
         headers: { Accept: "application/json" },
       });
-      const data = await response.json();
+      const data = response.headers.get("content-type")?.includes("application/json")
+        ? await response.json()
+        : {};
       if (data.csrf) form.elements.csrf.value = data.csrf;
       if (!response.ok) {
         const errors = data.errors || {
-          _form: "Something went wrong. Please try again.",
+          _form: response.status === 413
+            ? "The upload was too large for the server. Try again with smaller images."
+            : "Something went wrong. Please try again.",
         };
-        Object.entries(errors).forEach(([field, message]) => {
-          const error = document.getElementById(`${field}-error`);
-          if (error) {
-            error.textContent = message;
-            form.elements[field]?.setAttribute("aria-invalid", "true");
-          } else {
-            formError.textContent = message;
-            formError.hidden = false;
-          }
-        });
-        form.querySelector('[aria-invalid="true"]')?.focus();
+        Object.entries(errors).forEach(([field, message]) => setError(field, message));
+        (form.querySelector('[aria-invalid="true"]:not(:disabled)') || formError).focus();
         return;
       }
+      if (!data.success) throw new Error("Missing submission confirmation");
       form.hidden = true;
       success.hidden = false;
       success.querySelector(".reference").textContent =
@@ -209,10 +283,10 @@
       });
       form.reset();
       form.elements.csrf.value = data.csrf;
+      syncWorkFields();
     } catch {
-      formError.textContent =
-        "We couldn’t confirm your request. Check your connection and try again. Your details are still here.";
-      formError.hidden = false;
+      setError("_form", "We couldn’t confirm your request. Check your connection and try again. Your details are still here.");
+      formError.focus();
     } finally {
       submit.disabled = false;
       submit.querySelector("span").textContent = "Request a quote";
@@ -226,6 +300,6 @@
       success.hidden = true;
       form.hidden = false;
       clearErrors();
-      form.elements.name.focus();
+      form.querySelector('[name="work_type"]').focus();
     });
 })();

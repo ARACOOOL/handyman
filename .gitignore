@@ -1,0 +1,9 @@
+node_modules/
+.env
+test-results/
+playwright-report/
+reports/
+.DS_Store
+
+# The Sites preview is a separate managed repository.
+sites/
